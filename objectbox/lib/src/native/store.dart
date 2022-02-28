@@ -35,12 +35,11 @@ class Store {
   /// This meant for tests only; do not enable for releases!
   static bool debugLogs = false;
 
-  late final Pointer<OBX_store> _cStore;
+  late Pointer<OBX_store> _cStore;
   late final Pointer<OBX_dart_finalizer> _cFinalizer;
   HashMap<int, Type>? _entityTypeById;
   final _boxes = HashMap<Type, Box>();
   final ModelDefinition _defs;
-  bool _closed = false;
   Stream<List<Type>>? _entityChanges;
   final _reader = ReaderWithCBuffer();
   Transaction? _tx;
@@ -335,12 +334,14 @@ class Store {
   /// a single underlying native store. See [Store.fromReference] for more details.
   ByteData get reference => _reference;
 
+  /// Returns if this store is already closed and can no longer be used.
+  bool isClosed() => _cStore.address == 0;
+
   /// Closes this store.
   ///
   /// Don't try to call any other ObjectBox methods after the store is closed.
   void close() {
-    if (_closed) return;
-    _closed = true;
+    if (isClosed()) return;
 
     _boxes.values.forEach(InternalBoxAccess.close);
     _boxes.clear();
@@ -361,6 +362,7 @@ class Store {
       errors[1] = C.store_close(_cStore);
       errors.forEach(checkObx);
     }
+    _cStore = nullptr;
   }
 
   /// Returns a cached Box instance.
@@ -487,7 +489,11 @@ class Store {
   /// not started; false if shutting down (or an internal error occurred).
   ///
   /// Use to wait until all puts by [Box.putQueued] have finished.
-  bool awaitAsyncCompletion() => C.store_await_async_submitted(_ptr);
+  bool awaitAsyncCompletion() {
+    final result = C.store_await_async_submitted(_ptr);
+    reachabilityFence(this);
+    return result;
+  }
 
   /// Await for previously submitted async operations to be completed
   /// (the async queue does not have to become idle).
@@ -496,14 +502,16 @@ class Store {
   /// not started; false if shutting down (or an internal error occurred).
   ///
   /// Use to wait until all puts by [Box.putQueued] have finished.
-  bool awaitAsyncSubmitted() => C.store_await_async_submitted(_ptr);
+  bool awaitAsyncSubmitted() {
+    final result = C.store_await_async_submitted(_ptr);
+    reachabilityFence(this);
+    return result;
+  }
 
   /// The low-level pointer to this store.
   @pragma('vm:prefer-inline')
-  Pointer<OBX_store> get _ptr {
-    if (_closed) throw StateError('Cannot access a closed store pointer');
-    return _cStore;
-  }
+  Pointer<OBX_store> get _ptr =>
+      isClosed() ? throw StateError('Store is closed') : _cStore;
 }
 
 /// Internal only.
