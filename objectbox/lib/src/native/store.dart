@@ -36,6 +36,7 @@ class Store {
   static bool debugLogs = false;
 
   late final Pointer<OBX_store> _cStore;
+  late final Pointer<OBX_dart_finalizer> _cFinalizer;
   HashMap<int, Type>? _entityTypeById;
   final _boxes = HashMap<Type, Box>();
   final ModelDefinition _defs;
@@ -145,6 +146,18 @@ class Store {
       _cStore = C.store_open(opt);
 
       _checkStorePointer(_cStore);
+
+      // Attach a finalizer so when garbage collected, most importantly on
+      // Flutter's hot restart (not hot reload), the native Store is properly
+      // closed.
+      initializeDartAPI();
+      // Keep the finalizer so we can detach it when close() is called manually.
+      _cFinalizer = C.dartc_attach_finalizer(
+          this, native_store_close, _cStore.cast(), 1024 * 1024);
+      if (_cFinalizer == nullptr) {
+        close();
+        throwLatestNativeError(context: 'attach finalizer');
+      }
 
       // Always create _reference, so it can be non-nullable.
       // Ensure we only try to access the store created in the same process.
@@ -331,7 +344,12 @@ class Store {
 
     if (!_weak) {
       _openStoreDirectories.remove(_absoluteDirectoryPath);
-      checkObx(C.store_close(_cStore));
+      final errors = List.filled(2, 0);
+      if (_cFinalizer != nullptr) {
+        errors[0] = C.dartc_detach_finalizer(_cFinalizer, this);
+      }
+      errors[1] = C.store_close(_cStore);
+      errors.forEach(checkObx);
     }
   }
 
