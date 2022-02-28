@@ -147,18 +147,6 @@ class Store {
 
       _checkStorePointer(_cStore);
 
-      // Attach a finalizer so when garbage collected, most importantly on
-      // Flutter's hot restart (not hot reload), the native Store is properly
-      // closed.
-      initializeDartAPI();
-      // Keep the finalizer so we can detach it when close() is called manually.
-      _cFinalizer = C.dartc_attach_finalizer(
-          this, native_store_close, _cStore.cast(), 1024 * 1024);
-      if (_cFinalizer == nullptr) {
-        close();
-        throwLatestNativeError(context: 'attach finalizer');
-      }
-
       // Always create _reference, so it can be non-nullable.
       // Ensure we only try to access the store created in the same process.
       // Also serves as a simple sanity check/hash.
@@ -167,6 +155,8 @@ class Store {
       _reference.setUint64(1 * _int64Size, _ptr.address);
 
       _openStoreDirectories.add(_absoluteDirectoryPath);
+
+      _attachFinalizer();
     } catch (e) {
       _reader.clear();
       rethrow;
@@ -274,6 +264,8 @@ class Store {
 
       // Not setting _reference as this is a replacement for obtaining a store
       // via reference.
+
+      _attachFinalizer();
     } catch (e) {
       _reader.clear();
       rethrow;
@@ -306,6 +298,24 @@ class Store {
                 'package, see example/README.md');
       }
       rethrow;
+    }
+  }
+
+  /// Attach a finalizer (using Dart C API) so when garbage collected, most
+  /// importantly on Flutter's hot restart (not hot reload), the native Store is
+  /// properly closed.
+  ///
+  /// During regular use it's still recommended to explicitly call
+  /// close() and not rely on garbage collection [to avoid out-of-memory
+  /// errors](https://github.com/dart-lang/language/issues/1847#issuecomment-1002751632).
+  void _attachFinalizer() {
+    initializeDartAPI();
+    // Keep the finalizer so it can be detached when close() is called.
+    _cFinalizer = C.dartc_attach_finalizer(
+        this, native_store_close, _cStore.cast(), 1024 * 1024);
+    if (_cFinalizer == nullptr) {
+      close();
+      throwLatestNativeError(context: 'attach store finalizer');
     }
   }
 
