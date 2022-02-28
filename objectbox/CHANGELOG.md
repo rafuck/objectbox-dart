@@ -1,5 +1,8 @@
 ## latest
 
+* Resolve `Store` crashing after Flutter hot restart (hot reload continues to work). #387
+* Add `Store.isClosed()`. #390
+
 ## 1.4.0 (2022-02-22)
 
 * Support [ObjectBox Admin](https://docs.objectbox.io/data-browser) for Android apps to browse 
